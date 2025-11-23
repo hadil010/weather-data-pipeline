@@ -1,5 +1,5 @@
 import os
-import datetime from datetime 
+from datetime import datetime
 
 def create_folders():
   folders = [
