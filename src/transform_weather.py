@@ -2,86 +2,95 @@ import json
 import os
 from datetime import datetime
 
+from logger import get_logger
+logger = get_logger(__name__)
+
 def get_latest_bronze_file(bronze_folder="data/bronze"):
-    """
-    Finds the most recent JSON file in the bronze folder.
-    """
+    logger.info("Searching for latest bronze JSON file...")
     if not os.path.exists(bronze_folder):
+        logger.error(f"Bronze folder not found: {bronze_folder}")
         raise FileNotFoundError(f"Bronze folder not found: {bronze_folder}")
-    files = [
-        f for f in os.listdir(bronze_folder)
-        if f.endswith(".json")
-    ]
+
+    files = [f for f in os.listdir(bronze_folder) if f.endswith(".json")]
     if not files:
+        logger.error("No JSON files found in bronze layer.")
         raise FileNotFoundError("No JSON files found in bronze layer.")
-    # Sort files by name; if you used date-based names this works well
+
     files.sort()
     latest_file = files[-1]
-    return os.path.join(bronze_folder, latest_file)
+    path = os.path.join(bronze_folder, latest_file)
+
+    logger.info(f"Latest bronze file selected: {path}")
+    return path
+
 
 def load_bronze_json(filepath):
-    """
-    Loads JSON data from the given bronze file path.
-    """
-    with open(filepath, "r") as f:
-        data = json.load(f)
-    return data
+    logger.info(f"Loading bronze JSON file: {filepath}")
+    try:
+        with open(filepath, "r") as f:
+            data = json.load(f)
+        logger.info("Bronze JSON loaded successfully.")
+        return data
+    except Exception as e:
+        logger.error(f"Failed to load JSON: {e}")
+        raise
+
 
 def clean_weather(raw_json, city_name="Edmonton"):
-    """
-    Transforms raw Open-Meteo JSON into a list of rows:
-    [
-      {"timestamp": "...", "temp": 1.2, "city": "Edmonton"},
-      ...
-    ]
-    """
+    logger.info("Starting weather data cleaning...")
     hourly = raw_json.get("hourly", {})
     times = hourly.get("time", [])
     temps = hourly.get("temperature_2m", [])
+
     if not times or not temps:
-        raise ValueError("Missing 'time' or 'temperature_2m' in JSON.")
+        logger.error("Missing 'time' or 'temperature_2m' fields in JSON.")
+        raise ValueError("Missing 'time' or 'temperature_2m'")
+
     if len(times) != len(temps):
+        logger.error("Time/temperature length mismatch.")
         raise ValueError("Length mismatch between time and temperature lists.")
+
     rows = []
     for t, temp in zip(times, temps):
-        rows.append(
-            {
-                "timestamp": t,
-                "temp": temp,
-                "city": city_name
-            }
-        )
+        rows.append({"timestamp": t, "temp": temp, "city": city_name})
+
+    logger.info(f"Cleaned weather rows count: {len(rows)}")
     return rows
 
+
 def save_to_silver(rows, silver_folder="data/silver"):
-    """
-    Saves the cleaned rows to a CSV file in the silver layer.
-    File name example: data/silver/clean_2025-01-22.csv
-    """
+    logger.info("Saving cleaned data to silver layer...")
     os.makedirs(silver_folder, exist_ok=True)
+
     today_str = datetime.now().strftime("%Y-%m-%d")
     filename = f"clean_{today_str}.csv"
     filepath = os.path.join(silver_folder, filename)
-    # We will use the built-in csv module to keep it very "Python basics"
+
     import csv
     fieldnames = ["timestamp", "temp", "city"]
-    with open(filepath, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"[OK] Cleaned data saved → {filepath}")
+
+    try:
+        with open(filepath, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        logger.info(f"Silver CSV saved successfully → {filepath}")
+    except Exception as e:
+        logger.error(f"Failed to save silver CSV: {e}")
+        raise
+
 
 def main():
-    print("Loading latest bronze file...")
+    logger.info("----- Starting Silver Transformation Step -----")
+
     bronze_path = get_latest_bronze_file()
-    print(f"Using bronze file: {bronze_path}")
     raw_json = load_bronze_json(bronze_path)
-    print("Cleaning weather data into tabular format...")
-    rows = clean_weather(raw_json, city_name="Edmonton")
-    print(f"Total rows: {len(rows)}")
-    print("Saving to silver layer as CSV...")
+    rows = clean_weather(raw_json)
     save_to_silver(rows)
-    print("Silver layer updated successfully.")
+
+    logger.info("----- Silver Transformation Complete -----")
+
 
 if __name__ == "__main__":
     main()
