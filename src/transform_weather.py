@@ -5,6 +5,7 @@ from datetime import datetime
 from logger import get_logger
 logger = get_logger(__name__)
 
+
 def get_latest_bronze_file(bronze_folder="data/bronze"):
     logger.info("Searching for latest bronze JSON file...")
     if not os.path.exists(bronze_folder):
@@ -36,8 +37,17 @@ def load_bronze_json(filepath):
         raise
 
 
-def clean_weather(raw_json, city_name="Edmonton"):
+def clean_weather(raw_json, city_name="Edmonton", run_date=None):
+    """
+    Adds run_date to every row.
+    run_date = the date your pipeline ran (NOT the weather timestamp)
+    """
     logger.info("Starting weather data cleaning...")
+
+    # If no run_date provided → use today's date
+    if run_date is None:
+        run_date = datetime.now().strftime("%Y-%m-%d")
+
     hourly = raw_json.get("hourly", {})
     times = hourly.get("time", [])
     temps = hourly.get("temperature_2m", [])
@@ -52,22 +62,30 @@ def clean_weather(raw_json, city_name="Edmonton"):
 
     rows = []
     for t, temp in zip(times, temps):
-        rows.append({"timestamp": t, "temp": temp, "city": city_name})
+        rows.append({
+            "timestamp": t,
+            "temp": temp,
+            "city": city_name,
+            "run_date": run_date
+        })
 
-    logger.info(f"Cleaned weather rows count: {len(rows)}")
+    logger.info(f"Cleaned weather rows count: {len(rows)} with run_date={run_date}")
     return rows
 
 
-def save_to_silver(rows, silver_folder="data/silver"):
+def save_to_silver(rows, silver_folder="data/silver", run_date=None):
     logger.info("Saving cleaned data to silver layer...")
+
     os.makedirs(silver_folder, exist_ok=True)
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    filename = f"clean_{today_str}.csv"
+    if run_date is None:
+        run_date = datetime.now().strftime("%Y-%m-%d")
+
+    filename = f"clean_{run_date}.csv"
     filepath = os.path.join(silver_folder, filename)
 
     import csv
-    fieldnames = ["timestamp", "temp", "city"]
+    fieldnames = ["timestamp", "temp", "city", "run_date"]
 
     try:
         with open(filepath, "w", newline="") as f:
@@ -76,6 +94,7 @@ def save_to_silver(rows, silver_folder="data/silver"):
             writer.writerows(rows)
 
         logger.info(f"Silver CSV saved successfully → {filepath}")
+        print(f"[OK] Cleaned data saved → {filepath}")
     except Exception as e:
         logger.error(f"Failed to save silver CSV: {e}")
         raise
@@ -84,10 +103,14 @@ def save_to_silver(rows, silver_folder="data/silver"):
 def main():
     logger.info("----- Starting Silver Transformation Step -----")
 
+    run_date = datetime.now().strftime("%Y-%m-%d")
+    logger.info(f"Pipeline run_date = {run_date}")
+
     bronze_path = get_latest_bronze_file()
     raw_json = load_bronze_json(bronze_path)
-    rows = clean_weather(raw_json)
-    save_to_silver(rows)
+
+    rows = clean_weather(raw_json, run_date=run_date)
+    save_to_silver(rows, run_date=run_date)
 
     logger.info("----- Silver Transformation Complete -----")
 
