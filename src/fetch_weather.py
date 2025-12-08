@@ -3,39 +3,55 @@ import json
 import logging
 from datetime import datetime
 import os
-
-
 from logger import get_logger
+from config_loader import load_config
 
-logger = get_logger(__name__)  # NEW
 
-def fetch_weather():
+logger = get_logger(__name__)
+config = load_config()
+api_cfg = config["weather_api"]
+paths_cfg = config["paths"]
+city_name = config["city"]
+def build_weather_url() -> str:
+    """
+    Build the Open Meteo URL from configuration.
+    """
+    base_url = api_cfg["base_url"]
+    lat = api_cfg["latitude"]
+    lon = api_cfg["longitude"]
+    hourly_params = api_cfg["hourly_parameters"]
     url = (
-        "https://api.open-meteo.com/v1/forecast"
-        "?latitude=53.55&longitude=-113.46&hourly=temperature_2m"
+        f"{base_url}"
+        f"?latitude={lat}"
+        f"&longitude={lon}"
+        f"&hourly={hourly_params}"
     )
-    logger.info("Starting API call to Open-Meteo")
+    return url
+def fetch_weather():
+    url = build_weather_url()
+    timeout = api_cfg.get("timeout_seconds", 10)
+    logger.info("Starting API call to Open Meteo")
+    logger.info("Request URL: %s", url)
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=timeout)
         response.raise_for_status()
         data = response.json()
         logger.info("Weather API call successful")
         return data
     except Exception as e:
-        logger.error(f"API Error: {e}")
+        logger.error("API Error: %s", e)
         return None
-
 def save_to_bronze(data):
-    os.makedirs("data/bronze", exist_ok=True)
+    bronze_dir = paths_cfg["bronze_dir"]
+    os.makedirs(bronze_dir, exist_ok=True)
     filename = datetime.now().strftime("%Y-%m-%d.json")
-    filepath = os.path.join("data/bronze", filename)
+    filepath = os.path.join(bronze_dir, filename)
     with open(filepath, "w") as f:
         json.dump(data, f, indent=2)
-    logger.info(f"Saved raw weather JSON to {filepath}")
+    logger.info("Saved raw weather JSON to %s", filepath)
     print(f"[OK] Raw weather saved → {filepath}")
-
 def main():
-    logger.info("Fetch weather job started")
+    logger.info("Fetch weather job started for city: %s", city_name)
     print("Fetching weather data...")
     weather = fetch_weather()
     if weather:
@@ -44,6 +60,5 @@ def main():
     else:
         logger.error("No data received from weather API")
         print("❌ No data received. Check logs for details.")
-
 if __name__ == "__main__":
     main()

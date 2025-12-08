@@ -1,12 +1,14 @@
 import json
 import os
 from datetime import datetime
-
 from logger import get_logger
+from config_loader import load_config
+config = load_config()
+paths_cfg = config["paths"]
+city_name = config["city"]
 logger = get_logger(__name__)
 
-
-def get_latest_bronze_file(bronze_folder="data/bronze"):
+def get_latest_bronze_file(bronze_folder=paths_cfg["bronze_dir"]):
     logger.info("Searching for latest bronze JSON file...")
     if not os.path.exists(bronze_folder):
         logger.error(f"Bronze folder not found: {bronze_folder}")
@@ -73,7 +75,7 @@ def clean_weather(raw_json, city_name="Edmonton", run_date=None):
     return rows
 
 
-def save_to_silver(rows, silver_folder="data/silver", run_date=None):
+def save_to_silver(rows, silver_folder=paths_cfg["silver_dir"], run_date=None):
     logger.info("Saving cleaned data to silver layer...")
 
     os.makedirs(silver_folder, exist_ok=True)

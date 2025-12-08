@@ -4,11 +4,12 @@ import os
 from datetime import datetime
 
 from logger import get_logger
-
-DB_PATH = "database/weather.db"
-SILVER_DIR = "data/silver"
-
+from config_loader import load_config
 logger = get_logger(__name__)
+config = load_config()
+paths_cfg = config["paths"]
+DB_PATH = paths_cfg["database_path"]
+SILVER_DIR = paths_cfg["silver_dir"]
 
 def get_latest_silver_file():
     """Return the most recent CSV file from the silver folder."""
@@ -27,15 +28,16 @@ def get_latest_silver_file():
     logger.info("Latest silver file determined: %s", latest_path)
     return latest_path
 
-
 def create_connection(db_path=DB_PATH):
     os.makedirs(os.path.dirname(db_path) or "database", exist_ok=True)
     logger.info("Creating SQLite connection to %s", db_path)
     conn = sqlite3.connect(db_path)
     return conn
 
-
 def create_table(conn):
+    cursor = conn.cursor()
+
+    # 1. Create table if it does NOT exist
     create_sql = """
     CREATE TABLE IF NOT EXISTS weather (
         timestamp TEXT,
@@ -44,12 +46,23 @@ def create_table(conn):
         run_date TEXT
     );
     """
-    cursor = conn.cursor()
     cursor.execute(create_sql)
     conn.commit()
-    logger.info("Ensured weather table exists in database with run_date column")
 
+    # 2. Check existing columns in case the table already existed without run_date
+    cursor.execute("PRAGMA table_info(weather);")
+    columns = [col[1] for col in cursor.fetchall()]  # column names
 
+    # 3. Add run_date if missing
+    if "run_date" not in columns:
+        logger.info("run_date column missing. Adding it now...")
+        cursor.execute("ALTER TABLE weather ADD COLUMN run_date TEXT;")
+        conn.commit()
+        logger.info("Added run_date column to weather table")
+
+    else:
+        logger.info("run_date column already exists in weather table")
+        
 def load_csv_to_sql(conn, csv_path):
     logger.info("Loading data from CSV into SQLite: %s", csv_path)
 
@@ -82,7 +95,6 @@ def load_csv_to_sql(conn, csv_path):
         logger.exception("Failed to write dataframe to SQL")
         raise
 
-
 def quick_check(conn):
     cursor = conn.cursor()
     try:
@@ -102,7 +114,6 @@ def quick_check(conn):
     except Exception:
         logger.exception("Quick check query failed")
         return None, []
-
 
 def main():
     logger.info("SQL load job started")
@@ -142,7 +153,5 @@ def main():
             conn.close()
             logger.info("SQLite connection closed")
 
-
 if __name__ == "__main__":
     main()
-
